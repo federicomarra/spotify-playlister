@@ -66,6 +66,11 @@ The first time you run the script, a browser window will open asking you to log 
 python main.py --start-date YYYY-MM-DD [options]
 ```
 
+## Martina's usage
+```shell
+python main.py --start-date 2020-01-01 --interval 12 --style short --prefix "Cançons" --private
+```
+
 ## Example usage
 ```bash
 python main.py --start-date 2025-01-01 --interval 3 --style short --prefix "My songs"
