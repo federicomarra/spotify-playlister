@@ -95,9 +95,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--secrets",
-        default=".secrets.txt",
+        default="secrets.txt",
         metavar="FILE",
-        help="Path to the secrets file. Default: .secrets.txt",
+        help="Path to the secrets file. Default: secrets.txt",
     )
 
     return parser.parse_args()
