@@ -55,7 +55,7 @@ jobs:
       # ------------------------------------------------------------------ #
       - name: Run Spotify Playlister
         env:
-          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+          REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
         run: |
           python main.py \
             --start-date 2026-01-01 \
