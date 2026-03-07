@@ -1,9 +1,9 @@
 name: Weekly Spotify Sync
 
 on:
-  # Run every Monday at 08:00 UTC
+  # Run every day at 02:00 UTC, 04:00 CPH
   schedule:
-    - cron: "0 8 * * 1"
+    - cron: "0 2 * * *"
 
   # Allow manual trigger from the Actions tab
   workflow_dispatch:
@@ -46,7 +46,6 @@ jobs:
           CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
           REDIRECT_URI=${{ secrets.REDIRECT_URI }}
           USERNAME=${{ secrets.USERNAME }}
-          REFRESH_TOKEN=${{ secrets.REFRESH_TOKEN }}
           EOF
 
       # ------------------------------------------------------------------ #
@@ -59,7 +58,7 @@ jobs:
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
         run: |
           python main.py \
-            --start-date 2026-01-01 \
-            --interval 3 \
+            --start-date 2022-01-01 \
+            --interval 12 \
             --style short \
             --prefix "My songs"
