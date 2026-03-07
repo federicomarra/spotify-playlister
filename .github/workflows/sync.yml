@@ -61,4 +61,4 @@ jobs:
             --start-date 2022-01-01 \
             --interval 12 \
             --style short \
-            --prefix "My songs"
+            --prefix "Fede's songs"

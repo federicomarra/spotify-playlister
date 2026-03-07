@@ -78,6 +78,9 @@ def format_playlist_name(
             name = f"{ms}-{me} {y_start}"
         else:
             name = f"{ms} {y_start} - {me} {y_end}"
+            
+    if interval_months == 12 and m_start == 1:
+        name = str(y_start)
 
     if prefix:
         name = f"{prefix} – {name}"
