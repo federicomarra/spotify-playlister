@@ -69,8 +69,7 @@ def get_spotify_client(config: SpotifyConfig) -> spotipy.Spotify:
     In interactive mode (local runs) a browser window opens for the first
     authorisation; the token is cached and reused on subsequent runs.
 
-    In CI mode (GitHub Actions) the SPOTIFY_REFRESH_TOKEN environment
-    variable must be set. The function writes a temporary cache file so
+    In CI mode (GitHub Actions) the REFRESH_TOKEN environment variable must be set. The function writes a temporary cache file so
     spotipy can silently refresh the access token without a browser.
 
     Args:
@@ -80,15 +79,15 @@ def get_spotify_client(config: SpotifyConfig) -> spotipy.Spotify:
         An authenticated spotipy.Spotify instance.
 
     Raises:
-        EnvironmentError: In CI mode when SPOTIFY_REFRESH_TOKEN is not set.
+        EnvironmentError: In CI mode when REFRESH_TOKEN is not set.
     """
     cache_path = f".cache-{config.username}"
 
     if _is_ci():
-        refresh_token = os.environ.get("SPOTIFY_REFRESH_TOKEN", "").strip()
+        refresh_token = os.environ.get("REFRESH_TOKEN", "").strip()
         if not refresh_token:
             raise EnvironmentError(
-                "CI mode detected but SPOTIFY_REFRESH_TOKEN is not set.\n"
+                "CI mode detected but REFRESH_TOKEN is not set.\n"
                 "Add it as a repository secret in GitHub Actions."
             )
         print("[auth] CI mode: using refresh token from environment.")
