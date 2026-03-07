@@ -4,9 +4,9 @@ playlists.py
 Handles all playlist operations against the Spotify API:
   - Fetching the user's existing playlists
   - Creating new playlists
-  - Retrieving the track URIs already in a playlist
-  - Adding tracks while skipping duplicates
-  - Removing tracks that are no longer in the user's liked songs
+  - Retrieving the ordered track list of a playlist
+  - Syncing a playlist to exactly match a target ordered track list,
+    preserving the original Liked Songs order and preventing duplicates
 """
 
 from typing import Any
@@ -14,7 +14,7 @@ from typing import Any
 import spotipy
 
 
-# Spotify allows at most 100 track URIs per add/remove request
+# Spotify allows at most 100 track URIs per add / replace request
 _BATCH_SIZE = 100
 
 # Maximum number of playlists / tracks returned per API page
@@ -63,24 +63,27 @@ def get_user_playlists(
     return playlists
 
 
-def get_playlist_track_uris(
+def get_playlist_tracks_ordered(
     sp: spotipy.Spotify,
     playlist_id: str,
-) -> set[str]:
+) -> list[str]:
     """
-    Return the set of track URIs currently in *playlist_id*.
+    Return the track URIs currently in *playlist_id* as an ordered list.
 
-    Used to detect duplicates before adding new tracks, and to find
-    tracks that should be removed.
+    The list preserves the exact position of each track in the playlist
+    (index 0 = first track shown in Spotify). This is used both to detect
+    order differences and to know which tracks to remove.
+
+    Returning a list (not a set) is intentional: order matters here.
 
     Args:
         sp:          Authenticated spotipy client.
         playlist_id: Spotify playlist ID.
 
     Returns:
-        Set of track URI strings (e.g. 'spotify:track:...').
+        Ordered list of track URI strings (e.g. 'spotify:track:...').
     """
-    uris: set[str] = set()
+    uris: list[str] = []
     offset = 0
 
     while True:
@@ -98,7 +101,7 @@ def get_playlist_track_uris(
         for item in items:
             track = item.get("track")
             if track and track.get("uri"):
-                uris.add(track["uri"])
+                uris.append(track["uri"])
 
         if page["next"] is None:
             break
@@ -148,69 +151,36 @@ def find_or_create_playlist(
     return playlist_id, True
 
 
-def add_tracks_without_duplicates(
+def replace_playlist_contents(
     sp: spotipy.Spotify,
     playlist_id: str,
-    track_uris: list[str],
-    existing_uris: set[str],
-) -> tuple[int, int]:
+    ordered_uris: list[str],
+) -> None:
     """
-    Add *track_uris* to the playlist, skipping any already present.
+    Atomically replace the entire contents of a playlist with *ordered_uris*.
 
-    Tracks are added in batches of up to 100 (Spotify API limit).
+    Spotify's replace endpoint accepts at most 100 URIs and clears the
+    playlist before writing. For lists longer than 100 tracks, the first
+    batch replaces (clearing old content), then remaining tracks are
+    appended in subsequent batches of 100.
 
     Args:
-        sp:            Authenticated spotipy client.
-        playlist_id:   Target playlist ID.
-        track_uris:    List of Spotify track URIs to potentially add.
-        existing_uris: Set of URIs already in the playlist (from
-                       get_playlist_track_uris), avoids a redundant API call.
-
-    Returns:
-        Tuple (added_count, skipped_count).
+        sp:           Authenticated spotipy client.
+        playlist_id:  Target playlist ID.
+        ordered_uris: Complete desired track list in the intended play order.
     """
-    new_uris = [uri for uri in track_uris if uri not in existing_uris]
-    skipped  = len(track_uris) - len(new_uris)
+    if not ordered_uris:
+        # Clear the playlist entirely
+        sp.playlist_replace_items(playlist_id, [])
+        return
 
-    for i in range(0, len(new_uris), _BATCH_SIZE):
-        batch = new_uris[i : i + _BATCH_SIZE]
+    # First batch: replaces ALL existing content atomically (no leftover tracks)
+    sp.playlist_replace_items(playlist_id, ordered_uris[:_BATCH_SIZE])
+
+    # Subsequent batches: append the remaining tracks in order
+    for i in range(_BATCH_SIZE, len(ordered_uris), _BATCH_SIZE):
+        batch = ordered_uris[i : i + _BATCH_SIZE]
         sp.playlist_add_items(playlist_id, batch)
-
-    return len(new_uris), skipped
-
-
-def remove_unliked_tracks(
-    sp: spotipy.Spotify,
-    playlist_id: str,
-    target_uris: set[str],
-    existing_uris: set[str],
-) -> int:
-    """
-    Remove from the playlist any track no longer in the user's liked songs.
-
-    A track is removed when it is in the playlist (*existing_uris*)
-    but NOT in the current set of liked-song URIs for the period
-    (*target_uris*).
-
-    Tracks are removed in batches of up to 100 (Spotify API limit).
-
-    Args:
-        sp:            Authenticated spotipy client.
-        playlist_id:   Target playlist ID.
-        target_uris:   URIs that *should* be in the playlist (current liked
-                       songs for the period).
-        existing_uris: URIs currently in the playlist.
-
-    Returns:
-        Number of tracks removed.
-    """
-    to_remove = list(existing_uris - target_uris)
-
-    for i in range(0, len(to_remove), _BATCH_SIZE):
-        batch = to_remove[i : i + _BATCH_SIZE]
-        sp.playlist_remove_all_occurrences_of_items(playlist_id, batch)
-
-    return len(to_remove)
 
 
 def sync_period_to_playlist(
@@ -224,16 +194,26 @@ def sync_period_to_playlist(
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """
-    Ensure a playlist for *playlist_name* exactly mirrors the provided *tracks*:
-      - tracks in *tracks* but not in the playlist  -> added
-      - tracks in the playlist but not in *tracks*  -> removed (if remove_unliked)
-      - tracks already present in both              -> skipped
+    Ensure a playlist exactly mirrors *tracks* in the correct order.
+
+    Strategy:
+      1. Build the desired ordered URI list from *tracks* (never convert to
+         a set, so order is always preserved).
+      2. Fetch the playlist's current contents as an ordered list.
+      3. If current == desired (same URIs, same order) → do nothing (fast path).
+      4. If anything differs (new tracks, unliked tracks, wrong order) →
+         replace the entire playlist atomically via replace_playlist_contents.
+
+    This approach simultaneously solves:
+      - Duplicates: replacing the whole playlist is idempotent by definition.
+      - Order:      the final playlist always matches the target list exactly.
 
     Args:
         sp:                 Authenticated spotipy client.
         username:           Spotify user ID.
         playlist_name:      Name of the target playlist.
-        tracks:             Track dicts for this period (current liked songs).
+        tracks:             Track dicts for this period, ordered newest-first
+                            (as produced by tracks.get_saved_tracks).
         existing_playlists: Running dict of {name: id} (modified in-place).
         public:             Create new playlists as public (default True).
         remove_unliked:     Remove tracks no longer in liked songs (default True).
@@ -241,9 +221,12 @@ def sync_period_to_playlist(
 
     Returns:
         Summary dict with keys:
-            playlist_name, playlist_id, created, added, skipped, removed.
+            playlist_name, playlist_id, created, added, skipped, removed, reordered.
     """
-    target_uris = set(t["track_uri"] for t in tracks)
+    # Build the desired ordered URI list.
+    # NEVER convert to a set here -- that would destroy the order.
+    target_uris: list[str] = [t["track_uri"] for t in tracks]
+    target_set:  set[str]  = set(target_uris)
 
     if dry_run:
         already_exists = playlist_name in existing_playlists
@@ -259,30 +242,55 @@ def sync_period_to_playlist(
             "added":          len(target_uris),
             "skipped":        0,
             "removed":        0,
+            "reordered":      False,
         }
 
     playlist_id, created = find_or_create_playlist(
         sp, username, playlist_name, existing_playlists, public=public
     )
 
-    # Fetch current playlist contents once; reuse for both add and remove logic
-    existing_uris = get_playlist_track_uris(sp, playlist_id)
+    # Fetch current playlist as an ordered list (NOT a set).
+    current_uris: list[str] = get_playlist_tracks_ordered(sp, playlist_id)
+    current_set:  set[str]  = set(current_uris)
 
-    added, skipped = add_tracks_without_duplicates(
-        sp, playlist_id, list(target_uris), existing_uris
-    )
-
-    removed = 0
+    # Compute the effective target list based on the remove_unliked flag.
+    # If remove_unliked is False, keep tracks already in the playlist that
+    # are not in this period's liked songs (append them after the target tracks).
     if remove_unliked:
-        removed = remove_unliked_tracks(
-            sp, playlist_id, target_uris, existing_uris
-        )
+        effective_uris = target_uris
+    else:
+        extra = [u for u in current_uris if u not in target_set]
+        effective_uris = target_uris + extra
+
+    # Fast path: if the playlist already matches exactly, nothing to do.
+    if current_uris == effective_uris:
+        return {
+            "playlist_name": playlist_name,
+            "playlist_id":   playlist_id,
+            "created":        created,
+            "added":          0,
+            "skipped":        len(current_uris),
+            "removed":        0,
+            "reordered":      False,
+        }
+
+    # Compute change stats for the summary report.
+    effective_set = set(effective_uris)
+    added    = len(effective_set - current_set)
+    removed  = len(current_set - effective_set)
+    reordered = (current_set == effective_set and current_uris != effective_uris)
+
+    # Replace the entire playlist to guarantee correct content and order.
+    # This is idempotent: running it twice produces the same result,
+    # which is why re-executing the script never creates duplicates.
+    replace_playlist_contents(sp, playlist_id, effective_uris)
 
     return {
         "playlist_name": playlist_name,
         "playlist_id":   playlist_id,
         "created":        created,
         "added":          added,
-        "skipped":        skipped,
+        "skipped":        len(current_set & effective_set),
         "removed":        removed,
+        "reordered":      reordered,
     }

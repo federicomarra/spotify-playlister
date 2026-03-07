@@ -15,14 +15,18 @@ import spotipy
 _PAGE_LIMIT = 50
 
 
-def _parse_saved_at(saved_at_str: str) -> date:
+def _parse_saved_at(saved_at_str: str) -> datetime:
     """
-    Parse the ISO-8601 'added_at' timestamp returned by Spotify into a date.
+    Parse the ISO-8601 'added_at' timestamp returned by Spotify into a
+    timezone-aware datetime (UTC).
+
+    Full datetime precision is preserved so that tracks liked on the same
+    calendar day can still be ordered correctly within a playlist.
 
     Spotify returns strings like '2024-03-15T18:42:00Z'.
     """
     dt = datetime.strptime(saved_at_str, "%Y-%m-%dT%H:%M:%SZ")
-    return dt.replace(tzinfo=timezone.utc).date()
+    return dt.replace(tzinfo=timezone.utc)
 
 
 def get_saved_tracks(
@@ -33,21 +37,26 @@ def get_saved_tracks(
     Retrieve all tracks saved in the user's library on or after *start_date*.
 
     Each item in the returned list is a dict with:
-        - track_id   (str)  : Spotify track ID
-        - track_uri  (str)  : Spotify URI  (e.g. 'spotify:track:...')
-        - track_name (str)  : track title
-        - artist     (str)  : primary artist name
-        - album      (str)  : album name
-        - saved_at   (date) : date the track was liked
+        - track_id   (str)      : Spotify track ID
+        - track_uri  (str)      : Spotify URI  (e.g. 'spotify:track:...')
+        - track_name (str)      : track title
+        - artist     (str)      : primary artist name
+        - album      (str)      : album name
+        - saved_at   (datetime) : full UTC datetime the track was liked
+
+    Tracks are returned sorted newest-first (descending by saved_at) to
+    mirror the order shown in the Spotify Liked Songs view. grouping.py
+    uses saved_at.month / .year to assign tracks to period buckets, which
+    works correctly on datetime objects.
 
     Args:
         sp:         Authenticated spotipy client.
-        start_date: Only include tracks saved on this date or later.
+        start_date: Only include tracks whose saved_at.date() >= start_date.
 
     Returns:
-        List of track dicts sorted by saved_at ascending.
+        List of track dicts sorted by saved_at descending (newest first).
     """
-    print(f"[tracks] Fetching saved tracks from {start_date} onwards …")
+    print(f"[tracks] Fetching saved tracks from {start_date} onwards ...")
 
     results: list[dict[str, Any]] = []
     offset = 0
@@ -65,7 +74,8 @@ def get_saved_tracks(
 
             # Spotify returns tracks in reverse-chronological order.
             # Once we reach a track older than start_date we can stop.
-            if saved_at < start_date:
+            # Compare against .date() since start_date is a date object.
+            if saved_at.date() < start_date:
                 stop_early = True
                 break
 
@@ -88,7 +98,8 @@ def get_saved_tracks(
 
         offset += _PAGE_LIMIT
 
-    # Sort ascending so grouping is chronologically consistent
-    results.sort(key=lambda t: t["saved_at"])
+    # Sort descending (newest first) to match the Spotify Liked Songs order.
+    # Full datetime precision ensures correct ordering even within the same day.
+    results.sort(key=lambda t: t["saved_at"], reverse=True)
     print(f"[tracks] Found {len(results)} track(s) saved since {start_date}.")
     return results
