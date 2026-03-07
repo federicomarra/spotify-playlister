@@ -42,11 +42,11 @@ jobs:
       - name: Write secrets.txt
         run: |
           cat > secrets.txt << EOF
-          CLIENT_ID=${{ secrets.SPOTIFY_CLIENT_ID }}
-          CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}
-          REDIRECT_URI=${{ secrets.SPOTIFY_REDIRECT_URI }}
-          USERNAME=${{ secrets.SPOTIFY_USERNAME }}
-          REFRESH_TOKEN=${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+          CLIENT_ID=${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
+          REDIRECT_URI=${{ secrets.REDIRECT_URI }}
+          USERNAME=${{ secrets.USERNAME }}
+          REFRESH_TOKEN=${{ secrets.REFRESH_TOKEN }}
           EOF
 
       # ------------------------------------------------------------------ #
@@ -56,7 +56,7 @@ jobs:
       # ------------------------------------------------------------------ #
       - name: Run Spotify Playlister
         env:
-          REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
         run: |
           python main.py \
             --start-date 2026-01-01 \
