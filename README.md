@@ -174,11 +174,11 @@ Go to **Settings → Secrets and variables → Actions** in your GitHub reposito
 
 | Secret name | Value |
 |---|---|
-| `SPOTIFY_CLIENT_ID` | Your app's Client ID |
-| `SPOTIFY_CLIENT_SECRET` | Your app's Client Secret |
-| `SPOTIFY_REDIRECT_URI` | `http://127.0.0.1:8888/callback` |
-| `SPOTIFY_USERNAME` | Your Spotify username |
-| `SPOTIFY_REFRESH_TOKEN` | The token from `generate_token.py` |
+| `CLIENT_ID` | Your app's Client ID |
+| `CLIENT_SECRET` | Your app's Client Secret |
+| `REDIRECT_URI` | `http://127.0.0.1:8888/callback` |
+| `USERNAME` | Your Spotify username |
+| `REFRESH_TOKEN` | The token from `generate_token.py` |
 
 #### Step 3 – Push to GitHub
 
