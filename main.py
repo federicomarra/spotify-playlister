@@ -8,9 +8,14 @@ Usage examples
 # Group liked tracks monthly from Jan 2024, short names
 python main.py --start-date 2024-01-01 --interval 1 --style short
 
-# Group every 3 months with a custom prefix, private playlists
-python main.py --start-date 2023-06-01 --interval 3 --style long \\
-               --prefix "My Favourites" --private
+# Group every 3 months with a custom prefix
+python main.py --start-date 2023-06-01 --interval 3 --style long --prefix "My songs"
+
+# Keep playlists in sync: also remove tracks no longer liked
+python main.py --start-date 2024-01-01 --interval 3 --style short --prefix "My songs"
+
+# Skip removal of unliked tracks
+python main.py --start-date 2024-01-01 --no-remove
 
 # Preview what would be created/updated without touching Spotify
 python main.py --start-date 2024-01-01 --interval 6 --dry-run
@@ -40,7 +45,7 @@ from src.tracks import get_saved_tracks
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Spotify Playlister – organise your Liked Songs into "
+            "Spotify Playlister -- organise your Liked Songs into "
             "time-based playlists automatically."
         )
     )
@@ -80,13 +85,21 @@ def parse_args() -> argparse.Namespace:
         metavar="TEXT",
         help=(
             "Optional text prepended to each playlist name, "
-            "e.g. 'Liked Songs' → 'Liked Songs – Jan 2024'."
+            "e.g. 'My songs' -> 'My songs - Jan 2024'."
         ),
     )
     parser.add_argument(
         "--private",
         action="store_true",
         help="Create new playlists as private (default: public).",
+    )
+    parser.add_argument(
+        "--no-remove",
+        action="store_true",
+        help=(
+            "Do NOT remove tracks from playlists when they are unliked. "
+            "By default the script removes them to keep playlists in sync."
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -143,9 +156,11 @@ def main() -> None:
     groups = group_tracks_by_period(tracks, args.interval)
     print(f"[grouping] {len(groups)} period(s) to process.\n")
 
-    # --- Load existing playlists (avoids redundant API calls) -----------------
+    # --- Load existing playlists once (avoids redundant API calls) ------------
     existing_playlists = get_user_playlists(sp, config.username)
     print(f"[playlists] Found {len(existing_playlists)} existing playlist(s).\n")
+
+    remove_unliked = not args.no_remove
 
     # --- Sync each period to a playlist ---------------------------------------
     results = []
@@ -158,7 +173,7 @@ def main() -> None:
             prefix=args.prefix,
         )
 
-        print(f"Processing '{playlist_name}' ({len(period_tracks)} track(s)) …")
+        print(f"Processing '{playlist_name}' ({len(period_tracks)} liked track(s)) ...")
 
         summary = sync_period_to_playlist(
             sp=sp,
@@ -167,19 +182,23 @@ def main() -> None:
             tracks=period_tracks,
             existing_playlists=existing_playlists,
             public=not args.private,
+            remove_unliked=remove_unliked,
             dry_run=args.dry_run,
         )
         results.append(summary)
 
         action = "created" if summary["created"] else "updated"
         print(
-            f"  ✓ Playlist {action}: '{summary['playlist_name']}' | "
-            f"added={summary['added']}  skipped={summary['skipped']}\n"
+            f"  V Playlist {action}: '{summary['playlist_name']}' | "
+            f"added={summary['added']}  "
+            f"skipped={summary['skipped']}  "
+            f"removed={summary['removed']}\n"
         )
 
     # --- Final summary --------------------------------------------------------
     total_added   = sum(r["added"]   for r in results)
     total_skipped = sum(r["skipped"] for r in results)
+    total_removed = sum(r["removed"] for r in results)
     total_created = sum(1 for r in results if r["created"])
 
     print("=" * 60)
@@ -188,8 +207,9 @@ def main() -> None:
     print(f"  Playlists created   : {total_created}")
     print(f"  Tracks added        : {total_added}")
     print(f"  Tracks skipped      : {total_skipped} (already present)")
+    print(f"  Tracks removed      : {total_removed} (no longer liked)")
     if args.dry_run:
-        print("\n  (dry-run mode – no actual changes were made)")
+        print("\n  (dry-run mode -- no actual changes were made)")
     print("=" * 60)
 
 

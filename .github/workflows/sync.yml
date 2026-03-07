@@ -1,0 +1,64 @@
+name: Weekly Spotify Sync
+
+on:
+  # Run every Monday at 08:00 UTC
+  schedule:
+    - cron: "0 8 * * 1"
+
+  # Allow manual trigger from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Sync Liked Songs to Playlists
+    runs-on: ubuntu-latest
+
+    steps:
+      # ------------------------------------------------------------------ #
+      # 1. Check out the repository
+      # ------------------------------------------------------------------ #
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------ #
+      # 2. Set up Python
+      # ------------------------------------------------------------------ #
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ------------------------------------------------------------------ #
+      # 3. Install dependencies
+      # ------------------------------------------------------------------ #
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ------------------------------------------------------------------ #
+      # 4. Write secrets.txt from GitHub repository secrets
+      #    The file is written at runtime and never committed to the repo.
+      # ------------------------------------------------------------------ #
+      - name: Write secrets.txt
+        run: |
+          cat > secrets.txt << EOF
+          CLIENT_ID=${{ secrets.SPOTIFY_CLIENT_ID }}
+          CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          REDIRECT_URI=${{ secrets.SPOTIFY_REDIRECT_URI }}
+          USERNAME=${{ secrets.SPOTIFY_USERNAME }}
+          EOF
+
+      # ------------------------------------------------------------------ #
+      # 5. Run the playlister
+      #    CI=true is set automatically by GitHub Actions, which tells
+      #    auth.py to use the refresh token instead of opening a browser.
+      # ------------------------------------------------------------------ #
+      - name: Run Spotify Playlister
+        env:
+          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+        run: |
+          python main.py \
+            --start-date 2026-01-01 \
+            --interval 3 \
+            --style short \
+            --prefix "My songs"
