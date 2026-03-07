@@ -58,7 +58,7 @@ jobs:
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
         run: |
           python main.py \
-            --start-date 2022-01-01 \
+            --start-date 2016-01-01 \
             --interval 12 \
             --style short \
             --prefix "Fede's songs"
