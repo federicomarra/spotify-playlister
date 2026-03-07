@@ -46,6 +46,7 @@ jobs:
           CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}
           REDIRECT_URI=${{ secrets.SPOTIFY_REDIRECT_URI }}
           USERNAME=${{ secrets.SPOTIFY_USERNAME }}
+          REFRESH_TOKEN=${{ secrets.SPOTIFY_REFRESH_TOKEN }}
           EOF
 
       # ------------------------------------------------------------------ #
