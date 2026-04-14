@@ -1,4 +1,4 @@
-name: Weekly Spotify Sync
+name: Daily Spotify Sync
 
 on:
   # Run every day at 02:00 UTC, 04:00 CPH
