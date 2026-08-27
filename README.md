@@ -5,6 +5,7 @@ You choose the start date, the grouping window (1, 2, 3, 6 or 12 months), and th
 Re-running the script is always safe: each playlist is kept as an exact mirror of the matching liked songs — same tracks, same order (newest first) — so tracks are never duplicated, and tracks you have **unliked** are automatically **removed**. A playlist that already matches is left untouched.
 
 A **GitHub Actions workflow** is included to run the sync automatically every day with no manual intervention.
+A small **desktop UI** (`gui.py`) is also included if you prefer clicking to typing flags.
 
 ---
 
@@ -13,6 +14,7 @@ A **GitHub Actions workflow** is included to run the sync automatically every da
 ```
 spotify-playlister/
 ├── main.py                          # CLI entry point – run this
+├── gui.py                           # Optional desktop UI – same options, no flags
 ├── generate_token.py                # One-time helper to get your refresh token
 ├── requirements.txt                 # Python dependencies
 ├── secrets.txt                      # Your Spotify credentials (never commit this!)
@@ -61,6 +63,8 @@ pip install -r requirements.txt
 ```
 
 Python 3.10+ is recommended.
+
+`requirements.txt` also lists `pyobjc-framework-Cocoa`, used only by `gui.py` for the native macOS date picker. It is marked `sys_platform == "darwin"`, so pip skips it on every other platform — including the Linux runner used by the GitHub Actions workflow.
 
 ---
 
@@ -128,6 +132,24 @@ python main.py --start-date 2024-01-01 --interval 3 --no-remove
 # Preview without making any changes
 python main.py --start-date 2024-01-01 --interval 3 --dry-run
 ```
+
+---
+
+## Graphical interface
+
+If you would rather not type flags, `gui.py` opens a desktop window exposing every option listed above and running exactly the same code:
+
+```bash
+python gui.py
+```
+
+Run it from the repository root — like the CLI, it resolves `secrets.txt` and the token cache relative to the working directory.
+
+The form starts pre-filled with the values the daily workflow uses (start date `2016-01-01`, interval `12`, style `short`, prefix `Fede's songs`). Press **Run playlister** and the output streams into the log pane exactly as it would in a terminal. The sync runs on a background thread, so the window stays responsive throughout — including during the first-run browser authorisation, which can take a while.
+
+**Start date picker.** On macOS the date is chosen with the system's own `NSDatePicker`, opened from the **Choose...** button; this needs `pyobjc-framework-Cocoa` (already in `requirements.txt`). On other platforms — or if that package is not installed — the window falls back to year / month / day spinboxes, where the day range follows the selected month, so 31 February is not selectable.
+
+> The GUI is a convenience wrapper only. The CLI and the GitHub Actions workflow do not depend on it in any way.
 
 ---
 
