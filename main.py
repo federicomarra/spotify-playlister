@@ -116,8 +116,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
+def main(args: argparse.Namespace | None = None) -> None:
+    if args is None:
+        args = parse_args()
 
     # --- Validate inputs -------------------------------------------------------
     try:

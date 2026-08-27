@@ -1,2 +1,6 @@
 spotipy>=2.24.0
 python-dateutil>=2.9.0
+
+# gui.py only: native macOS date picker. The marker makes pip skip it on the
+# Linux runner used by .github/workflows/sync.yml.
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
