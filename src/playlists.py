@@ -82,31 +82,51 @@ def get_playlist_tracks_ordered(
 
     Returns:
         Ordered list of track URI strings (e.g. 'spotify:track:...').
+
+    Raises:
+        RuntimeError: if Spotify reports the playlist is not empty but no
+                      URIs could be read, which would otherwise cause the
+                      caller to overwrite a playlist it never actually saw.
     """
     uris: list[str] = []
     offset = 0
+    total = 0
 
     while True:
+        # Since the February 2026 API changes this is GET /playlists/{id}/items
+        # and each entry nests the track under the key "item", NOT "track".
+        # Asking for items(track(uri)) returned a list of empty dicts, so this
+        # function silently returned [] for every playlist.
         page = sp.playlist_items(
             playlist_id,
-            fields="items(track(uri)),next",
+            fields="items(item(uri)),total,next",
             limit=_PAGE_LIMIT,
             offset=offset,
         )
         items = page.get("items", [])
+        total = page.get("total", total)
 
         if not items:
             break
 
-        for item in items:
-            track = item.get("track")
+        for entry in items:
+            track = entry.get("item")
             if track and track.get("uri"):
                 uris.append(track["uri"])
 
-        if page["next"] is None:
+        # Do NOT use page["next"] -- same February 2026 reason as in
+        # get_user_playlists. Paginate manually on the offset instead.
+        if len(items) < _PAGE_LIMIT:
             break
 
         offset += _PAGE_LIMIT
+
+    if total and not uris:
+        raise RuntimeError(
+            f"Playlist {playlist_id} reports {total} track(s) but none could be "
+            f"read. Refusing to overwrite it -- the Spotify response shape has "
+            f"probably changed again."
+        )
 
     return uris
 
@@ -217,41 +237,41 @@ def sync_period_to_playlist(
         existing_playlists: Running dict of {name: id} (modified in-place).
         public:             Create new playlists as public (default True).
         remove_unliked:     Remove tracks no longer in liked songs (default True).
-        dry_run:            Print what would happen but make no API calls.
+        dry_run:            Report what would change but perform no writes.
 
     Returns:
         Summary dict with keys:
-            playlist_name, playlist_id, created, added, skipped, removed, reordered.
+            playlist_name, playlist_id, created, changed, added, removed,
+            kept, reordered.
     """
     # Build the desired ordered URI list.
     # NEVER convert to a set here -- that would destroy the order.
     target_uris: list[str] = [t["track_uri"] for t in tracks]
     target_set:  set[str]  = set(target_uris)
 
-    if dry_run:
-        already_exists = playlist_name in existing_playlists
-        print(
-            f"  [dry-run] '{playlist_name}': "
-            f"{'exists' if already_exists else 'would be created'}, "
-            f"{len(target_uris)} track(s) to sync."
-        )
+    if dry_run and playlist_name not in existing_playlists:
+        # Nothing to read: the playlist does not exist yet.
         return {
             "playlist_name": playlist_name,
-            "playlist_id":   existing_playlists.get(playlist_name, "N/A"),
-            "created":        not already_exists,
+            "playlist_id":   "N/A",
+            "created":        True,
+            "changed":        True,
             "added":          len(target_uris),
-            "skipped":        0,
             "removed":        0,
+            "kept":           0,
             "reordered":      False,
         }
 
-    playlist_id, created = find_or_create_playlist(
-        sp, username, playlist_name, existing_playlists, public=public
-    )
+    if dry_run:
+        playlist_id, created = existing_playlists[playlist_name], False
+    else:
+        playlist_id, created = find_or_create_playlist(
+            sp, username, playlist_name, existing_playlists, public=public
+        )
 
     # Fetch current playlist as an ordered list (NOT a set).
-    current_uris: list[str] = get_playlist_tracks_ordered(sp, playlist_id)
-    current_set:  set[str]  = set(current_uris)
+    # A playlist we just created is empty, so skip the round trip.
+    current_uris: list[str] = [] if created else get_playlist_tracks_ordered(sp, playlist_id)
 
     # Compute the effective target list based on the remove_unliked flag.
     # If remove_unliked is False, keep tracks already in the playlist that
@@ -268,29 +288,41 @@ def sync_period_to_playlist(
             "playlist_name": playlist_name,
             "playlist_id":   playlist_id,
             "created":        created,
+            "changed":        False,
             "added":          0,
-            "skipped":        len(current_uris),
             "removed":        0,
+            "kept":           len(current_uris),
             "reordered":      False,
         }
 
     # Compute change stats for the summary report.
-    effective_set = set(effective_uris)
-    added    = len(effective_set - current_set)
-    removed  = len(current_set - effective_set)
-    reordered = (current_set == effective_set and current_uris != effective_uris)
+    current_set:   set[str] = set(current_uris)
+    effective_set: set[str] = set(effective_uris)
+    kept: set[str] = current_set & effective_set
 
-    # Replace the entire playlist to guarantee correct content and order.
-    # This is idempotent: running it twice produces the same result,
-    # which is why re-executing the script never creates duplicates.
-    replace_playlist_contents(sp, playlist_id, effective_uris)
+    added   = len(effective_set - current_set)
+    removed = len(current_set - effective_set)
+
+    # Compare the surviving tracks only, so a run that both adds tracks and
+    # moves existing ones still reports the move.
+    reordered = (
+        [u for u in current_uris   if u in kept]
+        != [u for u in effective_uris if u in kept]
+    )
+
+    if not dry_run:
+        # Replace the entire playlist to guarantee correct content and order.
+        # This is idempotent: running it twice produces the same result,
+        # which is why re-executing the script never creates duplicates.
+        replace_playlist_contents(sp, playlist_id, effective_uris)
 
     return {
         "playlist_name": playlist_name,
         "playlist_id":   playlist_id,
         "created":        created,
+        "changed":        True,
         "added":          added,
-        "skipped":        len(current_set & effective_set),
         "removed":        removed,
+        "kept":           len(kept),
         "reordered":      reordered,
     }

@@ -189,3 +189,4 @@ cython_debug/
 # Secret files
 .cache-**
 secrets.txt
+CLAUDE.md

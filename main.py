@@ -187,31 +187,39 @@ def main() -> None:
         )
         results.append(summary)
 
-        action = "created" if summary["created"] else "updated"
-        reorder_note = "  reordered=yes" if summary.get("reordered") else ""
-        print(
-            f"  V Playlist {action}: '{summary['playlist_name']}' | "
-            f"added={summary['added']}  "
-            f"skipped={summary['skipped']}  "
-            f"removed={summary['removed']}"
-            f"{reorder_note}\n"
-        )
+        if not summary["changed"]:
+            print(f"  = Unchanged: {summary['kept']} track(s) already in sync\n")
+        else:
+            if summary["created"]:
+                verb = "Would create" if args.dry_run else "Created"
+            else:
+                verb = "Would update" if args.dry_run else "Updated"
+            reorder_note = "  reordered=yes" if summary["reordered"] else ""
+            print(
+                f"  V {verb}: "
+                f"added={summary['added']}  "
+                f"removed={summary['removed']}  "
+                f"kept={summary['kept']}"
+                f"{reorder_note}\n"
+            )
 
     # --- Final summary --------------------------------------------------------
     total_added     = sum(r["added"]   for r in results)
-    total_skipped   = sum(r["skipped"] for r in results)
     total_removed   = sum(r["removed"] for r in results)
     total_created   = sum(1 for r in results if r["created"])
-    total_reordered = sum(1 for r in results if r.get("reordered"))
+    total_unchanged = sum(1 for r in results if not r["changed"])
+    total_updated   = sum(1 for r in results if r["changed"] and not r["created"])
+    total_reordered = sum(1 for r in results if r["reordered"])
 
     print("=" * 60)
     print("Done!")
     print(f"  Playlists processed  : {len(results)}")
+    print(f"  Playlists unchanged  : {total_unchanged}")
+    print(f"  Playlists updated    : {total_updated}")
     print(f"  Playlists created    : {total_created}")
     print(f"  Tracks added         : {total_added}")
-    print(f"  Tracks skipped       : {total_skipped} (already present)")
-    print(f"  Tracks removed       : {total_removed} (no longer liked)")
-    print(f"  Playlists reordered  : {total_reordered} (order corrected to match liked songs)")
+    print(f"  Tracks removed       : {total_removed}")
+    print(f"  Playlists reordered  : {total_reordered}")
     if args.dry_run:
         print("\n  (dry-run mode -- no actual changes were made)")
     print("=" * 60)
